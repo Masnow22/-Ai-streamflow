@@ -3,9 +3,9 @@ import os
 import json
 import requests
 import google.generativeai as genai
+import datetime
 
 # --- 安全配置区 ---
-# 从 GitHub Secrets 中读取，本地运行时建议在环境变量设置
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 WECHAT_WEBHOOK = os.getenv("WECHAT_WEBHOOK")
 DB_FILE = "read_papers.json"
@@ -13,7 +13,7 @@ TOPIC = "cs.AI"
 
 def send_to_wechat(content):
     if not WECHAT_WEBHOOK:
-        print("未检测到 Webhook，跳过推送（仅在控制台显示）")
+        print("未检测到 Webhook，跳过推送")
         return
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -39,31 +39,34 @@ def save_read_paper(paper_id):
     read_list = load_read_papers()
     if paper_id not in read_list:
         read_list.append(paper_id)
-        # 只保留最近 100 条记录
         with open(DB_FILE, 'w') as f:
             json.dump(read_list[-100:], f)
 
 # --- 主逻辑 ---
 def fetch_and_summarize():
-    # 1. 检查 Key 是否存在
     if not GEMINI_KEY:
         print("错误: 请先配置 GEMINI_KEY 环境变量")
         return
 
-    # 2. 获取数据
-    api_url = f"http://export.arxiv.org/api/query?search_query=cat:{TOPIC}&max_results=5&sortBy=submittedDate"
-    print(f"正在从 ArXiv 提取 {TOPIC} 方向的最新内容...")
+    # 1. 获取数据
+    api_url = f"http://export.arxiv.org/api/query?search_query=cat:{TOPIC}&max_results=10&sortBy=submittedDate"
+    print(f"正在从 ArXiv 提取 {TOPIC} 方向内容...")
     feed = feedparser.parse(api_url)
     
     if not feed.entries:
         print("暂时没抓到数据。")
         return
 
+    # 2. 确定当前推送类型 (北京时间)
+    now_bj = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+    report_type = "🌅 AI 论文早报" if 6 <= now_bj.hour <= 15 else "🌙 AI 论文晚报"
+
     # 3. 配置 AI
     genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel('models/gemini-2.5-flash') 
+    # 建议使用 gemini-1.5-flash，2.5目前可能在部分区域不稳定
+    model = genai.GenerativeModel('gemini-1.5-flash') 
 
-    # 4. 加载记录
+    # 4. 【关键修正】先加载已读记录，再进入循环
     read_papers = load_read_papers()
     new_paper_count = 0 
 
@@ -94,27 +97,22 @@ def fetch_and_summarize():
         try:
             response = model.generate_content(prompt)
             
-            # 拼接要发送的内容
-            report_content = f"### 📊 AI 论文早报 (#{new_paper_count})\n\n{response.text}\n\n🔗 [查看 ArXiv 原文]({entry.link})"
+            # 【优化】使用动态 report_type 标题
+            report_content = f"### {report_type} (#{new_paper_count})\n\n{response.text}\n\n🔗 [查看 ArXiv 原文]({entry.link})"
             
-            # 1. 打印到控制台
             print(f"📌 处理中: {title}")
-            print(report_content)
-            print("-" * 30)
-            
-            # 2. 推送到微信
             send_to_wechat(report_content)
             
-            # 3. 记录已读
+            # 记录已读
             save_read_paper(entry.id)
+            print(f"✅ 推送成功")
+            print("-" * 30)
             
         except Exception as e:
             print(f"AI 总结出错: {e}")
 
     if new_paper_count == 0:
-        print("☕ 今天没有新论文，休息一下吧！")
-        # 如果需要没新论文也提醒，可以取消下面这行的注释
-        # send_to_wechat("☕ 今天没有新论文更新，可以继续钻研之前的课题。")
+        print(f"☕ {report_type}: 今天没有新出的论文。")
 
 if __name__ == "__main__":
     fetch_and_summarize()
