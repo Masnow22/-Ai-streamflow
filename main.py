@@ -65,7 +65,7 @@ def fetch_and_summarize():
     # 3. 配置 AI
     genai.configure(api_key=GEMINI_KEY)
     # 单 Key 用户建议死守 gemini-1.5-flash，它的免费限额最慷慨
-    model = genai.GenerativeModel('models/gemma-3-27b') 
+    model = genai.GenerativeModel('models/gemma-3-27b-it') 
 
     # 4. 加载记录
     read_papers = load_read_papers()
