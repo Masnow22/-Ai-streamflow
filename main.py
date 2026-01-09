@@ -4,6 +4,7 @@ import json
 import requests
 import google.generativeai as genai
 import datetime
+import time  # 必须引入时间库
 
 # --- 安全配置区 ---
 GEMINI_KEY = os.getenv("GEMINI_KEY")
@@ -50,7 +51,7 @@ def fetch_and_summarize():
 
     # 1. 获取数据
     api_url = f"http://export.arxiv.org/api/query?search_query=cat:{TOPIC}&max_results=10&sortBy=submittedDate"
-    print(f"正在从 ArXiv 提取 {TOPIC} 方向内容...")
+    print(f"正在抓取 {TOPIC} 的最新内容...")
     feed = feedparser.parse(api_url)
     
     if not feed.entries:
@@ -63,20 +64,25 @@ def fetch_and_summarize():
 
     # 3. 配置 AI
     genai.configure(api_key=GEMINI_KEY)
-    # 建议使用 gemini-1.5-flash，2.5目前可能在部分区域不稳定
-    model = genai.GenerativeModel('models/gemini-2.5-flash') 
+    # 单 Key 用户建议死守 gemini-1.5-flash，它的免费限额最慷慨
+    model = genai.GenerativeModel('gemini-1.5-flash') 
 
-    # 4. 【关键修正】先加载已读记录，再进入循环
+    # 4. 加载记录
     read_papers = load_read_papers()
     new_paper_count = 0 
 
     print("-" * 30)
     for entry in feed.entries:
-        # 【检查去重】
         if entry.id in read_papers:
             continue 
         
         new_paper_count += 1
+        
+        # --- 【单 Key 核心保护逻辑】 ---
+        # 哪怕只有一篇新论文，我们也先等 20 秒，给 API 留出喘息空间
+        print(f"⏳ 准备总结第 {new_paper_count} 篇... 正在执行 10 秒安全冷却...")
+        time.sleep(10) 
+
         title = entry.title
         summary = entry.summary.replace('\n', ' ') 
         
@@ -96,19 +102,20 @@ def fetch_and_summarize():
         
         try:
             response = model.generate_content(prompt)
-            
-            # 【优化】使用动态 report_type 标题
             report_content = f"### {report_type} (#{new_paper_count})\n\n{response.text}\n\n🔗 [查看 ArXiv 原文]({entry.link})"
             
             print(f"📌 处理中: {title}")
             send_to_wechat(report_content)
             
-            # 记录已读
             save_read_paper(entry.id)
             print(f"✅ 推送成功")
             print("-" * 30)
             
         except Exception as e:
+            # 针对 429 报错的特殊处理
+            if "429" in str(e):
+                print("⚠️ 警告：单个 Key 已达限制，跳过剩余任务以保护账号。")
+                break
             print(f"AI 总结出错: {e}")
 
     if new_paper_count == 0:
