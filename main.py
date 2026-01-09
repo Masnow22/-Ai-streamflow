@@ -64,7 +64,7 @@ def fetch_and_summarize():
     # 3. 配置 AI
     genai.configure(api_key=GEMINI_KEY)
     # 建议使用 gemini-1.5-flash，2.5目前可能在部分区域不稳定
-    model = genai.GenerativeModel('gemini-1.5-flash') 
+    model = genai.GenerativeModel('models/gemini-2.5-flash') 
 
     # 4. 【关键修正】先加载已读记录，再进入循环
     read_papers = load_read_papers()
