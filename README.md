@@ -32,3 +32,9 @@
 在 `main.py` 中修改 `TOPIC` 变量以关注你感兴趣的领域：
 ```python
 TOPIC = "cs.AI"  # 可选: cs.CV (视觉), cs.LG (机器学习), cs.CL (自然语言处理)
+```
+
+## 3. My Future Roadmap
+- [x] 基于 GitHub Actions 的云端自动化推送
+- [ ] 支持 Gemma-3-4B 本地部署测试
+- [ ] 开发配套的 Android 简报预览 App
