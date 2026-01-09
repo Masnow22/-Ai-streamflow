@@ -3,7 +3,7 @@
 
 [![GitHub Actions](https://img.shields.io/badge/Actions-Automated-green.svg)](https://github.com/Masnow22/-Ai-streamflow/actions)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
-[![Model](https://img.shields.io/badge/AI-Gemini%201.5%20Flash-orange.svg)](https://ai.google.dev/)
+[![Model](https://img.shields.io/badge/AI-Gemma%203%2027B-7D4EB1.svg)](https://ai.google.dev/gemma)
 
 这是一个专为 AI 研究者和开发者设计的自动化工具。它每天定时从 ArXiv 抓取最新的 AI 论文，利用 Google 最新的 AI 模型进行深度总结，并精准推送到你的微信机器人。
 
