@@ -1,0 +1,44 @@
+name: Daily ArXiv Summary
+
+on:
+  schedule:
+    # 每天北京时间 10:00 和 22:00 运行
+    # UTC 时间分别是 2:00 和 14:00
+    - cron: '0 2,14 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # 必须开启写权限，否则无法保存已读记录
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install feedparser google-generativeai requests
+
+      - name: Run script
+        env:
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+        run: python main.py
+
+      - name: Commit and push if JSON changed
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          # 确保文件存在，避免报错
+          touch read_papers.json
+          git add read_papers.json
+          git commit -m "Update read papers [skip ci]" || exit 0
+          git push
