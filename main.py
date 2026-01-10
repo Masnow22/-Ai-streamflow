@@ -4,10 +4,13 @@ import json
 import requests
 import google.generativeai as genai
 import datetime
-import time  # 必须引入时间库
+import time
+import openai
+from openai import OpenAI
 
 # --- 安全配置区 ---
 GEMINI_KEY = os.getenv("GEMINI_KEY")
+DEEPSEEK_KEY = os.getenv("DEEPSEEK_KEY")
 WECHAT_WEBHOOK = os.getenv("WECHAT_WEBHOOK")
 DB_FILE = "read_papers.json"
 TOPIC = "(cat:cs.AI OR cat:cs.CV OR cat:cs.LG)"
@@ -26,7 +29,6 @@ def send_to_wechat(content):
     except Exception as e:
         print(f"推送微信失败: {e}")
 
-# --- 核心工具函数 ---
 def load_read_papers():
     if os.path.exists(DB_FILE):
         try:
@@ -43,10 +45,53 @@ def save_read_paper(paper_id):
         with open(DB_FILE, 'w') as f:
             json.dump(read_list[-100:], f)
 
-# --- 主逻辑 ---
+def get_ai_summary(title, summary):
+    prompt = f"""
+    你是一个专业的科研领路人。请阅读以下论文并进行筛选：
+    标题：{title}
+    摘要：{summary}
+
+    筛选准则：
+    1. 优先总结具有创新性、突破性，或来自知名机构（如 OpenAI, Google, Meta, DeepMind, 斯坦福等）的论文。
+    2. 如果论文属于普通的增量研究、综述或质量平平，请仅回复“SKIP”四个字母。
+
+    总结格式：
+    0. 【原文标题与摘要概括】
+    1. 【核心贡献】
+    2. 【大白话启发】
+    3. 【名词解释】
+    注意：0-2不超过400字。
+    """
+
+    # --- 统一返回格式：(内容, 模型名) ---
+    try:
+        print(f"🤖 Gemini 正在评估: {title[:30]}...")
+        genai.configure(api_key=GEMINI_KEY)
+        model = genai.GenerativeModel('models/gemma-3-27b-it')
+        response = model.generate_content(prompt)
+        return response.text.strip(), "Gemma-3-27b"
+    except Exception as e:
+        print(f"⚠️ Gemini 报错: {e}，尝试切换 DeepSeek...")
+        
+        if DEEPSEEK_KEY:
+            try:
+                client = OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com")
+                response = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": "你是一个专业的学术论文评审助手。"},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                return response.choices[0].message.content.strip(), "DeepSeek-V3"
+            except Exception as ds_e:
+                print(f"❌ 全部 AI 失败: {ds_e}")
+                return "ERROR", "None"
+        return "ERROR", "None"
+
 def fetch_and_summarize():
     if not GEMINI_KEY:
-        print("错误: 请先配置 GEMINI_KEY 环境变量")
+        print("错误: 请先配置环境变量")
         return
 
     # 1. 获取数据
@@ -58,68 +103,50 @@ def fetch_and_summarize():
         print("暂时没抓到数据。")
         return
 
-    # 2. 确定当前推送类型 (北京时间)
+    # 2. 确定时间
     now_bj = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     report_type = "🌅 AI 论文早报" if 6 <= now_bj.hour <= 15 else "🌙 AI 论文晚报"
 
-    # 3. 配置 AI
-    genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel('models/gemma-3-27b-it') 
-
-    # 4. 加载记录
+    # 3. 处理论文
     read_papers = load_read_papers()
     new_paper_count = 0 
+    processed_count = 0
 
     print("-" * 30)
     for entry in feed.entries:
         if entry.id in read_papers:
             continue 
         
-        new_paper_count += 1
-        
-        # --- 【单 Key 核心保护逻辑】 ---
-        # 哪怕只有一篇新论文，我们也先等 20 秒，给 API 留出喘息空间
-        print(f"⏳ 准备总结第 {new_paper_count} 篇... 正在执行 10 秒安全冷却...")
-        time.sleep(10) 
+        processed_count += 1
+        if processed_count > 1:
+            print(f"⏳ 冷却 10 秒...")
+            time.sleep(10)
 
-        title = entry.title
-        summary = entry.summary.replace('\n', ' ') 
+        # 【核心修正】：一次调用，同时获取结果和模型名
+        result, model_name = get_ai_summary(entry.title, entry.summary.replace('\n', ' '))
         
-        prompt = f"""
-        你是一个专业的科研领路人。请阅读以下论文：
-        标题：{title}
-        摘要：{summary}
-
-        
-        请从以下论文中筛选出真正具有创新性、或者来自知名机构（如 OpenAI, Google, Meta）的论文进行总结。如果论文质量平平，请简略跳过，按以下格式输出：
-        0. 【原文标题与摘要概括】：先列出原文Title，再用三句话概括这个Abstract。
-        1. 【核心贡献】：用一句话说明它解决了什么。
-        2. 【大白话启发】：它对我们的世界和本专业的大学生有什么实际意义？
-        3. 【名词解释】：挑出文中5个最晦涩的专业术语，用最通俗的语言解释。
-
-        注意：0、1、2总计不超过400字；3大约100字。请使用适合微信阅读的Markdown格式。
-        """
-        
-        try:
-            response = model.generate_content(prompt)
-            report_content = f"### {report_type} (#{new_paper_count})\n\n{response.text}\n\n🔗 [查看 ArXiv 原文]({entry.link})"
-            
-            print(f"📌 处理中: {title}")
-            send_to_wechat(report_content)
-            
+        if result == "SKIP":
+            print(f"🍃 跳过低相关性论文: {entry.title[:30]}...")
             save_read_paper(entry.id)
-            print(f"✅ 推送成功")
-            print("-" * 30)
-            
-        except Exception as e:
-            # 针对 429 报错的特殊处理
-            if "429" in str(e):
-                print("⚠️ 警告：单个 Key 已达限制，跳过剩余任务以保护账号。")
-                break
-            print(f"AI 总结出错: {e}")
+            continue
+        
+        if result == "ERROR":
+            print(f"❌ 处理失败，跳过")
+            continue
+
+        # 4. 推送
+        new_paper_count += 1
+        # 修正变量名 rfooter -> footer
+        footer = f"\n\n---\n> 🤖 **AI 署名**：本文由 {model_name} 自动总结生成"
+        report_content = f"### {report_type} (#{new_paper_count})\n\n{result}{footer}\n\n🔗 [查看 ArXiv 原文]({entry.link})"
+        
+        send_to_wechat(report_content)
+        save_read_paper(entry.id)
+        print(f"✅ 已推送: {entry.title[:30]}")
+        print("-" * 30)
 
     if new_paper_count == 0:
-        print(f"☕ {report_type}: 今天没有新出的论文。")
+        print(f"☕ {report_type}: 暂时没有符合筛选标准的新论文。")
 
 if __name__ == "__main__":
     fetch_and_summarize()
