@@ -10,7 +10,7 @@ import time  # 必须引入时间库
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 WECHAT_WEBHOOK = os.getenv("WECHAT_WEBHOOK")
 DB_FILE = "read_papers.json"
-TOPIC = "cs.AI" 
+TOPIC = "(cat:cs.AI OR cat:cs.CV OR cat:cs.LG)"
 
 def send_to_wechat(content):
     if not WECHAT_WEBHOOK:
@@ -50,7 +50,7 @@ def fetch_and_summarize():
         return
 
     # 1. 获取数据
-    api_url = f"http://export.arxiv.org/api/query?search_query=cat:{TOPIC}&max_results=10&sortBy=submittedDate"
+    api_url = f"http://export.arxiv.org/api/query?search_query={TOPIC}&max_results=15&sortBy=submittedDate&sortOrder=descending"
     print(f"正在抓取 {TOPIC} 的最新内容...")
     feed = feedparser.parse(api_url)
     
@@ -64,7 +64,6 @@ def fetch_and_summarize():
 
     # 3. 配置 AI
     genai.configure(api_key=GEMINI_KEY)
-    # 单 Key 用户建议死守 gemini-1.5-flash，它的免费限额最慷慨
     model = genai.GenerativeModel('models/gemma-3-27b-it') 
 
     # 4. 加载记录
@@ -91,7 +90,8 @@ def fetch_and_summarize():
         标题：{title}
         摘要：{summary}
 
-        请按以下格式输出：
+        
+        请从以下论文中筛选出真正具有创新性、或者来自知名机构（如 OpenAI, Google, Meta）的论文进行总结。如果论文质量平平，请简略跳过，按以下格式输出：
         0. 【原文标题与摘要概括】：先列出原文Title，再用三句话概括这个Abstract。
         1. 【核心贡献】：用一句话说明它解决了什么。
         2. 【大白话启发】：它对我们的世界和本专业的大学生有什么实际意义？
