@@ -1,3 +1,4 @@
+import urllib.parse
 import feedparser
 import os
 import json
@@ -95,7 +96,9 @@ def fetch_and_summarize():
         return
 
     # 1. 获取数据
-    api_url = f"http://export.arxiv.org/api/query?search_query={TOPIC}&max_results=15&sortBy=submittedDate&sortOrder=descending"
+    
+    encoded_topic = urllib.parse.quote(TOPIC)
+    api_url = f"http://export.arxiv.org/api/query?search_query={encoded_topic}&max_results=15&sortBy=submittedDate&sortOrder=descending"
     print(f"正在抓取 {TOPIC} 的最新内容...")
     feed = feedparser.parse(api_url)
     
